@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
   plugin_platform_interface: ^2.0.2
 
 dev_dependencies:
@@ -40,6 +42,9 @@ flutter:
       ios:
         pluginClass: FlutterRecordSoundPlugin
 
+      web:
+        pluginClass: FlutterRecordSoundPluginWeb
+        fileName: "flutter_record_sound_web.dart"
   # To add assets to your plugin package, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
