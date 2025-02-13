@@ -105,6 +105,10 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         val bitRate = call.argument<Int>("bitRate")
         val samplingRate = call.argument<Double>("samplingRate")
         var path = call.argument<String>("path")
+        if (encoder == null || bitRate == null || samplingRate == null) {
+            result.error("-4", "Invalid arguments for start method", null)
+            return
+        }
         if (path == null) {
             val outputDir = activity?.cacheDir
             if (outputDir == null) {
@@ -112,16 +116,12 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                 return
             }
             try {
-                val outputFile = File.createTempFile("audio", ".m4a", outputDir)
+                val outputFile = File.createTempFile("audio", getFileExtension(encoder), outputDir)
                 path = outputFile.path
             } catch (e: IOException) {
                 result.error("-3", "Failed to create temporary file", e.message)
                 return
             }
-        }
-        if (encoder == null || bitRate == null || samplingRate == null) {
-            result.error("-4", "Invalid arguments for start method", null)
-            return
         }
         recorder?.start(path!!, encoder, bitRate, samplingRate, result)
     }
@@ -219,5 +219,30 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             }
         }
         return false
+    }
+
+    // 获取文件扩展名
+    private fun getFileExtension(encoder: Int): String {
+        return when (encoder) {
+            6 -> {
+                // WAV 格式
+                ".wav"
+            }
+
+            3, 4 -> {
+                // AMR 格式
+                ".amr"
+            }
+
+            5 -> {
+                // Opus 格式
+                ".opus"
+            }
+
+            else -> {
+                // 默认使用 AAC 格式
+                ".m4a"
+            }
+        }
     }
 }

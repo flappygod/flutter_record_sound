@@ -1,8 +1,8 @@
 import 'package:flutter_record_sound/flutter_record_sound_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter/foundation.dart';
-import 'types/audio_encoder.dart';
 import 'types/amplitude.dart';
+import 'types/encoder.dart';
 import 'dart:html' as html;
 import 'dart:async';
 

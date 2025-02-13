@@ -9,7 +9,6 @@ internal class Recorder(private val activity: Activity) {
     private var mediaRecorder: RecorderMedia? = null
     private var wavRecorder: RecorderWav? = null
     private var path: String? = null
-    private var maxAmplitude = -160.0
 
     //start recording with specified parameters
     fun start(
@@ -83,8 +82,7 @@ internal class Recorder(private val activity: Activity) {
 
     fun getAmplitude(result: MethodChannel.Result) {
         if (wavRecorder != null) {
-            val amplitude = wavRecorder?.getAmplitude() ?: -160.0
-            result.success(mapOf("current" to amplitude, "max" to maxAmplitude))
+            result.success(wavRecorder?.getAmplitude())
         }
         if (mediaRecorder != null) {
             result.success(mediaRecorder?.getAmplitude())

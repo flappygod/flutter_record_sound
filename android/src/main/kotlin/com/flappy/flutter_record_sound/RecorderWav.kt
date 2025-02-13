@@ -1,26 +1,29 @@
 package com.flappy.flutter_record_sound
 
-import android.app.Activity
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.util.Log
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import android.media.MediaRecorder
 import kotlinx.coroutines.launch
-import java.io.File
+import android.media.AudioFormat
+import android.media.AudioRecord
 import java.io.FileOutputStream
+import android.app.Activity
 import java.io.IOException
 import kotlin.math.log10
+import android.util.Log
 import kotlin.math.max
+import java.io.File
 
 class RecorderWav(private val activity: Activity) {
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
     private var isPaused = false
     private var path: String? = null
-    private var currentAmplitudeDb: Double = -160.0 // Stores the current decibel value
+
+    // Stores the current decibel value
+    private var maxAmplitude = -160.0
+    private var currentAmplitudeDb: Double = -160.0
     private var bufferSize: Int = 0
     private var samplingRate: Int = 0
 
@@ -119,9 +122,10 @@ class RecorderWav(private val activity: Activity) {
     }
 
     // Get the current amplitude (in decibels)
-    fun getAmplitude(): Double {
+    fun getAmplitude(): Map<String, Any> {
         synchronized(this) {
-            return currentAmplitudeDb
+            val amplitude = currentAmplitudeDb
+            return mapOf("current" to amplitude, "max" to maxAmplitude)
         }
     }
 
@@ -136,16 +140,22 @@ class RecorderWav(private val activity: Activity) {
                         val read = audioRecord?.read(buffer, 0, buffer.size) ?: 0
                         if (read > 0) {
                             // Calculate the maximum amplitude in the current buffer
-                            var maxAmplitude = 0.0
+                            var localMaxAmplitude = 0.0
                             for (i in 0 until read) {
                                 val amplitude = buffer[i].toDouble()
-                                maxAmplitude = max(maxAmplitude, kotlin.math.abs(amplitude))
+                                localMaxAmplitude = max(localMaxAmplitude, kotlin.math.abs(amplitude))
                             }
                             // Calculate and cache the decibel value
-                            currentAmplitudeDb = if (maxAmplitude > 0) {
-                                20 * log10(maxAmplitude / 32768.0)
+                            currentAmplitudeDb = if (localMaxAmplitude > 0) {
+                                20 * log10(localMaxAmplitude / 32768.0)
                             } else {
                                 -160.0
+                            }
+                            // Update the global maxAmplitude
+                            synchronized(this) {
+                                if (currentAmplitudeDb > maxAmplitude) {
+                                    maxAmplitude = currentAmplitudeDb
+                                }
                             }
                             // Write to file
                             outputStream.write(buffer.toByteArray(), 0, read * 2)
@@ -189,7 +199,8 @@ class RecorderWav(private val activity: Activity) {
     // Create WAV file header
     private fun createWavHeader(dataSize: Int, sampleRate: Int): ByteArray {
         val totalSize = 36 + dataSize
-        val byteRate = sampleRate * 2 * 1 // Byte rate = Sample rate * Channels * Bits per sample / 8
+        // Byte rate = Sample rate * Channels * Bits per sample / 8
+        val byteRate = sampleRate * 2 * 1
         return byteArrayOf(
             'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte(), // RIFF
             (totalSize and 0xff).toByte(),
@@ -198,9 +209,12 @@ class RecorderWav(private val activity: Activity) {
             ((totalSize shr 24) and 0xff).toByte(),
             'W'.code.toByte(), 'A'.code.toByte(), 'V'.code.toByte(), 'E'.code.toByte(), // WAVE
             'f'.code.toByte(), 'm'.code.toByte(), 't'.code.toByte(), ' '.code.toByte(), // fmt
-            16, 0, 0, 0, // Subchunk size
-            1, 0, // Audio format (PCM)
-            1, 0, // Number of channels (Mono)
+            // Subchunk size
+            16, 0, 0, 0,
+            // Audio format (PCM)
+            1, 0,
+            // Number of channels (Mono)
+            1, 0,
             (sampleRate and 0xff).toByte(),
             ((sampleRate shr 8) and 0xff).toByte(),
             ((sampleRate shr 16) and 0xff).toByte(),
@@ -209,9 +223,12 @@ class RecorderWav(private val activity: Activity) {
             ((byteRate shr 8) and 0xff).toByte(),
             ((byteRate shr 16) and 0xff).toByte(),
             ((byteRate shr 24) and 0xff).toByte(),
-            2, 0, // Block align
-            16, 0, // Bits per sample
-            'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte(), 'a'.code.toByte(), // data
+            // Block align
+            2, 0,
+            // Bits per sample
+            16, 0,
+            // data
+            'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte(), 'a'.code.toByte(),
             (dataSize and 0xff).toByte(),
             ((dataSize shr 8) and 0xff).toByte(),
             ((dataSize shr 16) and 0xff).toByte(),

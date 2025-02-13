@@ -1,4 +1,4 @@
-## 1.0.1
+## 1.0.2
 
-* Add support for wav format
-* Optimize using multithreading
+* Downgrade the version of sdk.
+* Fix bugs in getAmplitude.

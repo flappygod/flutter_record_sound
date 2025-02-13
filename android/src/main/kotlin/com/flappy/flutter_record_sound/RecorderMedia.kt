@@ -98,9 +98,12 @@ internal class RecorderMedia(private val activity: Activity) {
         val amp: MutableMap<String, Any> = HashMap()
         var current = -160.0
         if (isRecording) {
-            current = 20 * log10(mediaRecorder!!.maxAmplitude / 32768.0)
-            if (current > maxAmplitude) {
-                maxAmplitude = current
+            val maxAmp = mediaRecorder?.maxAmplitude ?: 0
+            if (maxAmp > 0) {
+                current = 20 * log10(maxAmp / 32768.0)
+                if (current > maxAmplitude) {
+                    maxAmplitude = current
+                }
             }
         }
         amp["current"] = current

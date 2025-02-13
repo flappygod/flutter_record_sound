@@ -1,10 +1,10 @@
 name: flutter_record_sound
 description: "A Flutter project that records sound from the microphone."
-version: 1.0.1
+version: 1.0.2
 homepage: https://github.com/flappygod/flutter_record_sound.git
 
 environment:
-  sdk: ^3.6.2
+  sdk: ^3.0.0
   flutter: '>=3.3.0'
 
 dependencies:
