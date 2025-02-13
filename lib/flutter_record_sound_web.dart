@@ -81,7 +81,8 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _resetMediaRecorder();
 
     try {
-      final html.MediaStream? stream = await html.window.navigator.mediaDevices?.getUserMedia(<dynamic, dynamic>{
+      final html.MediaStream? stream = await html.window.navigator.mediaDevices
+          ?.getUserMedia(<dynamic, dynamic>{
         'audio': true,
         'audioBitsPerSecond': bitRate,
         'bitsPerSecond': bitRate,

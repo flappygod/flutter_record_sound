@@ -1,6 +1,6 @@
 name: flutter_record_sound
-description: "A new Flutter project."
-version: 0.0.1
+description: "A Flutter project that records sound from the microphone."
+version: 1.0.0
 homepage:
 
 environment:

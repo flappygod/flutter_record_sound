@@ -11,7 +11,8 @@ class MethodChannelFlutterRecordSound extends FlutterRecordSoundPlatform {
 
   @override
   Future<bool> hasPermission() async {
-    final bool? result = await methodChannel.invokeMethod<bool>('hasPermission');
+    final bool? result =
+        await methodChannel.invokeMethod<bool>('hasPermission');
     return result ?? false;
   }
 

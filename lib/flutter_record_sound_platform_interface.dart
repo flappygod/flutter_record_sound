@@ -8,7 +8,8 @@ abstract class FlutterRecordSoundPlatform extends PlatformInterface {
 
   static final Object _token = Object();
 
-  static FlutterRecordSoundPlatform _instance = MethodChannelFlutterRecordSound();
+  static FlutterRecordSoundPlatform _instance =
+      MethodChannelFlutterRecordSound();
 
   /// The default instance of [FlutterRecordSoundPlatform] to use.
   ///
