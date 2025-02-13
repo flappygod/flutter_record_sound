@@ -21,4 +21,7 @@ enum AudioEncoder {
   /// /!\ SDK 29 on Android /!\
   /// /!\ SDK 11 on iOs /!\
   OPUS,
+
+  /// Will output to wav format container.
+  WAV,
 }

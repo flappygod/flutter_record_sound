@@ -11,13 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.lang.Exception
 import java.lang.IllegalStateException
-import java.util.HashMap
 import kotlin.math.log10
 
 internal class Recorder(private val activity: Activity) {
     private var isRecording = false
     private var isPaused = false
     private var recorder: MediaRecorder? = null
+    private var wavRecorder: WavRecorder? = null
     private var path: String? = null
     private var maxAmplitude = -160.0
 
@@ -33,38 +33,63 @@ internal class Recorder(private val activity: Activity) {
         Log.d(LOG_TAG, "Start recording")
         this.path = path
 
-        // 在后台线程中执行录音初始化和启动
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(activity.baseContext)
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaRecorder()
+        if (encoder == 6) {
+            // 使用 WavRecorder 录制 WAV 格式
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    wavRecorder = WavRecorder(path)
+                    wavRecorder?.startRecording()
+                    isRecording = true
+                    isPaused = false
+
+                    // 在主线程中返回结果
+                    CoroutineScope(Dispatchers.Main).launch {
+                        result.success(null)
+                    }
+                } catch (e: Exception) {
+                    Log.e(LOG_TAG, "WAV recording failed: ${e.message}")
+                    wavRecorder = null
+
+                    // 在主线程中返回错误
+                    CoroutineScope(Dispatchers.Main).launch {
+                        result.error("-1", "Start WAV recording failure", e.message)
+                    }
                 }
-                recorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
-                recorder!!.setAudioEncodingBitRate(bitRate)
-                recorder!!.setAudioSamplingRate(samplingRate.toInt())
-                recorder!!.setOutputFormat(getOutputFormat(encoder))
-                recorder!!.setAudioEncoder(getEncoder(encoder))
-                recorder!!.setOutputFile(path)
+            }
+        } else {
+            // 使用 MediaRecorder 录制其他格式
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        MediaRecorder(activity.baseContext)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        MediaRecorder()
+                    }
+                    recorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
+                    recorder!!.setAudioEncodingBitRate(bitRate)
+                    recorder!!.setAudioSamplingRate(samplingRate.toInt())
+                    recorder!!.setOutputFormat(getOutputFormat(encoder))
+                    recorder!!.setAudioEncoder(getEncoder(encoder))
+                    recorder!!.setOutputFile(path)
 
-                recorder!!.prepare()
-                recorder!!.start()
-                isRecording = true
-                isPaused = false
+                    recorder!!.prepare()
+                    recorder!!.start()
+                    isRecording = true
+                    isPaused = false
 
-                // 在主线程中返回结果
-                CoroutineScope(Dispatchers.Main).launch {
-                    result.success(null)
-                }
-            } catch (e: Exception) {
-                recorder?.release()
-                recorder = null
+                    // 在主线程中返回结果
+                    CoroutineScope(Dispatchers.Main).launch {
+                        result.success(null)
+                    }
+                } catch (e: Exception) {
+                    recorder?.release()
+                    recorder = null
 
-                // 在主线程中返回错误
-                CoroutineScope(Dispatchers.Main).launch {
-                    result.error("-1", "Start recording failure", e.message)
+                    // 在主线程中返回错误
+                    CoroutineScope(Dispatchers.Main).launch {
+                        result.error("-1", "Start recording failure", e.message)
+                    }
                 }
             }
         }
@@ -77,14 +102,28 @@ internal class Recorder(private val activity: Activity) {
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     fun pause(result: MethodChannel.Result) {
-        pauseRecording()
-        result.success(null)
+        if (wavRecorder != null) {
+            // WAV 格式支持暂停
+            wavRecorder?.pauseRecording()
+            isPaused = true
+            result.success(null)
+        } else {
+            pauseRecording()
+            result.success(null)
+        }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     fun resume(result: MethodChannel.Result) {
-        resumeRecording()
-        result.success(null)
+        if (wavRecorder != null) {
+            // WAV 格式支持恢复
+            wavRecorder?.resumeRecording()
+            isPaused = false
+            result.success(null)
+        } else {
+            resumeRecording()
+            result.success(null)
+        }
     }
 
     fun isRecording(result: MethodChannel.Result) {
@@ -96,17 +135,23 @@ internal class Recorder(private val activity: Activity) {
     }
 
     fun getAmplitude(result: MethodChannel.Result) {
-        val amp: MutableMap<String, Any> = HashMap()
-        var current = -160.0
-        if (isRecording) {
-            current = 20 * log10(recorder!!.maxAmplitude / 32768.0)
-            if (current > maxAmplitude) {
-                maxAmplitude = current
+        if (wavRecorder != null) {
+            // 获取 WAV 格式的振幅
+            val amplitude = wavRecorder?.getAmplitude() ?: -160.0
+            result.success(mapOf("current" to amplitude, "max" to maxAmplitude))
+        } else {
+            val amp: MutableMap<String, Any> = HashMap()
+            var current = -160.0
+            if (isRecording) {
+                current = 20 * log10(recorder!!.maxAmplitude / 32768.0)
+                if (current > maxAmplitude) {
+                    maxAmplitude = current
+                }
             }
+            amp["current"] = current
+            amp["max"] = maxAmplitude
+            result.success(amp)
         }
-        amp["current"] = current
-        amp["max"] = maxAmplitude
-        result.success(amp)
     }
 
     fun close() {
@@ -114,7 +159,10 @@ internal class Recorder(private val activity: Activity) {
     }
 
     private fun stopRecording() {
-        if (recorder != null) {
+        if (wavRecorder != null) {
+            wavRecorder?.stopRecording()
+            wavRecorder = null
+        } else if (recorder != null) {
             try {
                 if (isRecording || isPaused) {
                     Log.d(LOG_TAG, "Stop recording")
@@ -196,6 +244,7 @@ internal class Recorder(private val activity: Activity) {
                 }
                 MediaRecorder.AudioEncoder.AAC
             }
+
             else -> MediaRecorder.AudioEncoder.AAC
         }
     }

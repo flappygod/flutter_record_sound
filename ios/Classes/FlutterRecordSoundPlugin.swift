@@ -2,7 +2,7 @@ import Flutter
 import UIKit
 import AVFoundation
 
-public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin ,AVAudioRecorderDelegate{
+public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderDelegate {
     
     // 注册
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -10,7 +10,6 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin ,AVAudioRecorderD
         let instance = FlutterRecordSoundPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
-    
     
     // 属性定义
     var isRecording = false
@@ -26,13 +25,11 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin ,AVAudioRecorderD
         case "start":
             let args = call.arguments as! [String: Any]
             path = args["path"] as? String
-            
             if path == nil {
                 let directory = NSTemporaryDirectory()
-                let fileName = UUID().uuidString + ".m4a"
+                let fileName = UUID().uuidString + getFileExtension(for: args["encoder"] as? Int ?? 0)
                 path = NSURL.fileURL(withPathComponents: [directory, fileName])?.absoluteString
             }
-            
             start(
                 path: path!,
                 encoder: args["encoder"] as? Int ?? 0,
@@ -98,7 +95,10 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin ,AVAudioRecorderD
             AVEncoderBitRateKey: bitRate,
             AVSampleRateKey: samplingRate,
             AVNumberOfChannelsKey: 2,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVLinearPCMBitDepthKey: 16, // 16-bit PCM for WAV
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false
         ]
         
         let options: AVAudioSession.CategoryOptions = [.defaultToSpeaker, .allowBluetooth]
@@ -196,8 +196,28 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin ,AVAudioRecorderD
             return Int(kAudioFormatAMR_WB)
         case 5:
             return Int(kAudioFormatOpus)
+        case 6: // WAV 格式
+            return Int(kAudioFormatLinearPCM)
         default:
             return Int(kAudioFormatMPEG4AAC)
+        }
+    }
+    
+    // 获取文件扩展名
+    fileprivate func getFileExtension(for encoder: Int) -> String {
+        switch encoder {
+        case 6:
+            // WAV 格式
+            return ".wav"
+        case 3, 4:
+            // AMR 格式
+            return ".amr"
+        case 5:
+            // Opus 格式
+            return ".opus"
+        default:
+            // 默认使用 AAC 格式
+            return ".m4a"
         }
     }
 }
