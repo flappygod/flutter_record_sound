@@ -1,4 +1,3 @@
-## 1.0.2
+## 1.0.3
 
-* Downgrade the version of sdk.
-* Fix bugs in getAmplitude.
+* Change the description of the package.
