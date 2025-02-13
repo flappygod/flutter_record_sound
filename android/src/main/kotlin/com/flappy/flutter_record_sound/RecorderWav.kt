@@ -21,13 +21,8 @@ class RecorderWav(private val activity: Activity) {
     private var isPaused = false
     private var path: String? = null
     private var currentAmplitudeDb: Double = -160.0 // Stores the current decibel value
-
-    // Calculate the minimum buffer size
-    private val bufferSize: Int = AudioRecord.getMinBufferSize(
-        SAMPLE_RATE,
-        AudioFormat.CHANNEL_IN_MONO,
-        AudioFormat.ENCODING_PCM_16BIT
-    )
+    private var bufferSize: Int = 0
+    private var samplingRate: Int = 0
 
     // Check if recording is in progress
     fun isRecording(): Boolean {
@@ -39,19 +34,27 @@ class RecorderWav(private val activity: Activity) {
         return isPaused
     }
 
-    // Start recording
+    // Start recording with a specified sampling rate
     fun start(
         path: String,
+        samplingRate: Int,
         result: MethodChannel.Result
     ) {
         stop() // Stop any previous recording
         this.path = path
+        this.samplingRate = samplingRate
+        this.bufferSize = AudioRecord.getMinBufferSize(
+            samplingRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Initialize AudioRecord
+                // Initialize AudioRecord with the specified sampling rate
                 audioRecord = AudioRecord(
                     MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE,
+                    samplingRate,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
                     bufferSize
@@ -173,7 +176,7 @@ class RecorderWav(private val activity: Activity) {
             // Read PCM data
             val pcmData = pcmFile.readBytes()
             // Add WAV file header
-            val wavData = createWavHeader(pcmData.size) + pcmData
+            val wavData = createWavHeader(pcmData.size, samplingRate) + pcmData
             // Write to WAV file
             wavFile?.writeBytes(wavData)
             // Delete temporary PCM file
@@ -184,9 +187,9 @@ class RecorderWav(private val activity: Activity) {
     }
 
     // Create WAV file header
-    private fun createWavHeader(dataSize: Int): ByteArray {
+    private fun createWavHeader(dataSize: Int, sampleRate: Int): ByteArray {
         val totalSize = 36 + dataSize
-        val byteRate = SAMPLE_RATE * 2 * 1 // Byte rate = Sample rate * Channels * Bits per sample / 8
+        val byteRate = sampleRate * 2 * 1 // Byte rate = Sample rate * Channels * Bits per sample / 8
         return byteArrayOf(
             'R'.code.toByte(), 'I'.code.toByte(), 'F'.code.toByte(), 'F'.code.toByte(), // RIFF
             (totalSize and 0xff).toByte(),
@@ -198,10 +201,10 @@ class RecorderWav(private val activity: Activity) {
             16, 0, 0, 0, // Subchunk size
             1, 0, // Audio format (PCM)
             1, 0, // Number of channels (Mono)
-            (SAMPLE_RATE and 0xff).toByte(),
-            ((SAMPLE_RATE shr 8) and 0xff).toByte(),
-            ((SAMPLE_RATE shr 16) and 0xff).toByte(),
-            ((SAMPLE_RATE shr 24) and 0xff).toByte(),
+            (sampleRate and 0xff).toByte(),
+            ((sampleRate shr 8) and 0xff).toByte(),
+            ((sampleRate shr 16) and 0xff).toByte(),
+            ((sampleRate shr 24) and 0xff).toByte(),
             (byteRate and 0xff).toByte(),
             ((byteRate shr 8) and 0xff).toByte(),
             ((byteRate shr 16) and 0xff).toByte(),
@@ -217,9 +220,6 @@ class RecorderWav(private val activity: Activity) {
     }
 
     companion object {
-        // Sample rate
-        private const val SAMPLE_RATE = 44100
-
         // Log tag
         private const val LOG_TAG = "WavRecorder"
     }

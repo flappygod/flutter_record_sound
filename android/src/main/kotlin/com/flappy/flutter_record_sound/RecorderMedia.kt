@@ -1,15 +1,15 @@
 package com.flappy.flutter_record_sound
 
-import android.app.Activity
-import android.media.MediaRecorder
-import android.os.Build
-import android.util.Log
-import androidx.annotation.RequiresApi
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
+import androidx.annotation.RequiresApi
 import kotlinx.coroutines.Dispatchers
+import android.media.MediaRecorder
 import kotlinx.coroutines.launch
+import android.app.Activity
 import kotlin.math.log10
+import android.os.Build
+import android.util.Log
 
 internal class RecorderMedia(private val activity: Activity) {
     private var isRecording = false
@@ -187,7 +187,6 @@ internal class RecorderMedia(private val activity: Activity) {
                 }
                 MediaRecorder.AudioEncoder.AAC
             }
-
             else -> MediaRecorder.AudioEncoder.AAC
         }
     }

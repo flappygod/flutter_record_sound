@@ -25,6 +25,7 @@ internal class Recorder(private val activity: Activity) {
             wavRecorder = RecorderWav(activity)
             wavRecorder?.start(
                 path,
+                samplingRate.toInt(),
                 result,
             )
         } else {
