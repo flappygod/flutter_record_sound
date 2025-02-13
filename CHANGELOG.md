@@ -1,4 +1,4 @@
-## 1.0.0
+## 1.0.1
 
-* Flutter sound recorder plugin
+* Add support for wav format
 * Optimize using multithreading
