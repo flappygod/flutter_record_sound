@@ -1,40 +1,61 @@
-import 'dart:html' as html;
-import 'dart:typed_data';
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter_record_sound/flutter_record_sound_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter/foundation.dart';
+import 'package:web/web.dart';
 import 'types/amplitude.dart';
 import 'types/encoder.dart';
+import 'dart:js_interop';
+import 'dart:js_util';
+import 'dart:async';
+import 'dart:math';
+import 'dart:html';
 
 class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
   static void registerWith(Registrar registrar) {
     FlutterRecordSoundPlatform.instance = FlutterRecordSoundPluginWeb();
   }
 
-  html.MediaRecorder? _mediaRecorder;
-  final List<html.Blob> _chunks = <html.Blob>[];
+  MediaRecorder? _mediaRecorder;
+  AudioContext? _audioContext;
+  AnalyserNode? _analyserNode;
+  MediaStreamAudioSourceNode? _audioSourceNode;
+  final List<Blob> _chunks = <Blob>[];
   Completer<String>? _onStopCompleter;
+
+  //监听数据可用事件
+  var jsAvailable;
+  var jsStop;
 
   // 最大振幅
   double _maxAmplitude = -160;
 
   @override
   Future<void> dispose() async {
-    _mediaRecorder?.stop();
+    if (_mediaRecorder?.state == 'recording' || _mediaRecorder?.state == 'paused') {
+      _mediaRecorder?.stop();
+    }
     _resetMediaRecorder();
+    _audioContext?.close();
+    _audioContext = null;
+    _analyserNode = null;
+    _audioSourceNode = null;
+    _chunks.clear();
   }
 
   @override
   Future<bool> hasPermission() async {
-    final html.MediaDevices? mediaDevices = html.window.navigator.mediaDevices;
-    if (mediaDevices == null) {
-      return false;
-    }
-
     try {
-      await mediaDevices.getUserMedia({'audio': true});
+      final MediaStream? stream = await promiseToFuture(
+        window.navigator.mediaDevices.getUserMedia(
+          MediaStreamConstraints(
+            audio: true.toJS,
+          ),
+        ),
+      );
+      // 停止音频流以释放资源
+      stream?.getTracks().toDart.forEach((track) {
+        track.stop();
+      });
       return true;
     } catch (_) {
       return false;
@@ -74,61 +95,62 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     int bitRate = 128000,
     double samplingRate = 44100.0,
   }) async {
-    _mediaRecorder?.stop();
-    _resetMediaRecorder();
+    if (_mediaRecorder?.state == 'recording') {
+      _mediaRecorder?.stop();
+      _resetMediaRecorder();
+    }
 
     try {
-      final html.MediaStream? stream = await html.window.navigator.mediaDevices
-          ?.getUserMedia({
-        'audio': true,
-        'audioBitsPerSecond': bitRate,
-        'bitsPerSecond': bitRate,
-      });
-
+      final MediaStream? stream = await promiseToFuture(
+        window.navigator.mediaDevices.getUserMedia(
+          MediaStreamConstraints(
+            audio: true.toJS,
+          ),
+        ),
+      );
       if (stream != null) {
         _initializeRecorder(stream);
+        _initializeAudioContext(stream);
       } else {
-        if (kDebugMode) {
-          print('Audio recording not supported.');
-        }
+        throw Exception('Audio recording not supported.');
       }
     } catch (error, stack) {
       _handleError(error, stack);
+      rethrow;
     }
   }
 
   @override
   Future<String?> stop() async {
-    _onStopCompleter = Completer<String>();
-    _mediaRecorder?.stop();
-    return _onStopCompleter?.future;
+    if (_mediaRecorder?.state == 'recording' || _mediaRecorder?.state == 'paused') {
+      _onStopCompleter = Completer<String>();
+      _mediaRecorder?.stop();
+      return _onStopCompleter?.future;
+    }
+    return null;
   }
 
   @override
   Future<Amplitude> getAmplitude() async {
-    if (_chunks.isEmpty) {
+    if (_analyserNode == null) {
       return Amplitude(current: -160, max: _maxAmplitude);
     }
 
-    // 将 Blob 转换为 ArrayBuffer
-    final html.Blob blob = html.Blob(_chunks);
-    final ByteBuffer buffer = await blobToArrayBuffer(blob);
+    //获取音频时域数据
+    final Uint8List timeDomainData = Uint8List(_analyserNode!.fftSize);
+    _analyserNode!.getByteTimeDomainData(timeDomainData.toJS);
 
-    //将 ArrayBuffer 转换为 Float32List
-    final Uint8List uint8List = Uint8List.view(buffer);
-    final Float32List float32List = Float32List.sublistView(uint8List);
-
-    //计算 RMS 振幅
+    //计算当前振幅分贝
     double sum = 0;
-    for (final sample in float32List) {
-      sum += sample * sample;
+    for (final value in timeDomainData) {
+      //范围 [-1, 1]
+      final double normalizedValue = (value / 128.0) - 1.0;
+      sum += normalizedValue * normalizedValue;
     }
-    // 使用 dart:math 的 sqrt
-    final rms = sqrt(sum / float32List.length);
-    // 使用 log10
-    final currentAmplitude = 20 * (rms > 0 ? log10(rms) : -1.0);
+    final rms = sqrt(sum / timeDomainData.length);
+    final double currentAmplitude = rms > 0 ? 20 * log10(rms) : -160;
 
-    // 更新最大振幅
+    //更新最大振幅
     if (currentAmplitude > _maxAmplitude) {
       _maxAmplitude = currentAmplitude;
     }
@@ -136,14 +158,26 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     return Amplitude(current: currentAmplitude, max: _maxAmplitude);
   }
 
-  void _initializeRecorder(html.MediaStream stream) {
+  void _initializeRecorder(MediaStream stream) {
     if (kDebugMode) {
       print('Start recording');
     }
-    _mediaRecorder = html.MediaRecorder(stream);
-    _mediaRecorder?.addEventListener('dataavailable', _onDataAvailable);
-    _mediaRecorder?.addEventListener('stop', _onStop);
+    _mediaRecorder = MediaRecorder(stream);
+
+    //监听数据可用事件
+    jsAvailable = allowInterop(_onData);
+    jsStop = allowInterop(_onStop);
+    _mediaRecorder?.addEventListener('dataavailable', jsAvailable);
+    _mediaRecorder?.addEventListener('stop', jsStop);
     _mediaRecorder?.start();
+  }
+
+  void _initializeAudioContext(MediaStream stream) {
+    _audioContext = AudioContext();
+    _audioSourceNode = _audioContext!.createMediaStreamSource(stream);
+    _analyserNode = _audioContext!.createAnalyser();
+    _analyserNode!.fftSize = 2048;
+    _audioSourceNode!.connect(_analyserNode!);
   }
 
   void _handleError(Object error, StackTrace trace) {
@@ -153,43 +187,36 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
   }
 
-  void _onDataAvailable(html.Event event) {
-    if (event is html.BlobEvent && event.data != null) {
-      _chunks.add(event.data!);
+  void _onData(var event) {
+    final Blob? blob = getProperty(event, 'data');
+    if (blob != null) {
+      _chunks.add(blob);
     }
   }
 
-  void _onStop(html.Event event) {
+  void _onStop(var event) {
     if (kDebugMode) {
       print('Stop recording');
     }
-    String? audioUrl;
-    if (_chunks.isNotEmpty) {
-      final html.Blob blob = html.Blob(_chunks);
-      audioUrl = html.Url.createObjectUrl(blob);
-    }
+
+    //将 Blob 转换为可下载的 URL
+    final Blob audioBlob = Blob(_chunks.toJS);
+    final String audioUrl = Url.createObjectUrl(audioBlob);
+
+    //清理资源
+    Url.revokeObjectUrl(audioUrl);
     _resetMediaRecorder();
+
+    //返回音频 URL
     _onStopCompleter?.complete(audioUrl);
   }
 
   void _resetMediaRecorder() {
-    _mediaRecorder?.removeEventListener('dataavailable', _onDataAvailable);
-    _mediaRecorder?.removeEventListener('stop', _onStop);
+    // 监听数据可用事件
+    _mediaRecorder?.removeEventListener('dataavailable', jsAvailable);
+    _mediaRecorder?.removeEventListener('stop', jsStop);
     _mediaRecorder = null;
     _chunks.clear();
-  }
-
-  Future<ByteBuffer> blobToArrayBuffer(html.Blob blob) {
-    final completer = Completer<ByteBuffer>();
-    final reader = html.FileReader();
-    reader.onLoadEnd.listen((_) {
-      completer.complete(reader.result as ByteBuffer);
-    });
-    reader.onError.listen((error) {
-      completer.completeError(error);
-    });
-    reader.readAsArrayBuffer(blob);
-    return completer.future;
   }
 
   /// 计算以 10 为底的对数

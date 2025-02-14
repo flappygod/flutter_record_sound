@@ -8,6 +8,7 @@ environment:
   flutter: '>=3.3.0'
 
 dependencies:
+  web: ^1.1.0
   flutter:
     sdk: flutter
   flutter_web_plugins:
@@ -41,7 +42,6 @@ flutter:
         pluginClass: FlutterRecordSoundPlugin
       ios:
         pluginClass: FlutterRecordSoundPlugin
-
       web:
         pluginClass: FlutterRecordSoundPluginWeb
         fileName: "flutter_record_sound_web.dart"
