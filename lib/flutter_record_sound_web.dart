@@ -204,7 +204,6 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     final String audioUrl = Url.createObjectUrl(audioBlob);
 
     //清理资源
-    Url.revokeObjectUrl(audioUrl);
     _resetMediaRecorder();
 
     //返回音频 URL

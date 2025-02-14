@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_record_sound/flutter_record_sound.dart';
 import 'package:flutter_record_sound/flutter_record_sound_method_channel.dart';
 import 'package:flutter_record_sound/types/types.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,6 +32,7 @@ class RecordSoundTestPage extends StatefulWidget {
 
 class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
   final FlutterRecordSound _recordSound = FlutterRecordSound();
+  final AudioPlayer _audioPlayer = AudioPlayer(); // Create an instance of AudioPlayer
 
   bool _hasPermission = false;
   bool _isRecording = false;
@@ -109,6 +111,18 @@ class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
     }
   }
 
+  Future<void> _playRecording() async {
+    if (_recordedFilePath != null) {
+      try {
+        await _audioPlayer.play(_recordedFilePath!, isLocal: true);
+      } catch (e) {
+        _showError(e.toString());
+      }
+    } else {
+      _showError('No recorded file to play.');
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Error: $message')),
@@ -161,6 +175,11 @@ class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
             ElevatedButton(
               onPressed: _isRecording ? _getAmplitude : null,
               child: const Text('Get Amplitude'),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: _recordedFilePath != null ? _playRecording : null,
+              child: const Text('Play Recording'),
             ),
           ],
         ),
