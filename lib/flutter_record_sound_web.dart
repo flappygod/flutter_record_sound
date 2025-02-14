@@ -1,24 +1,24 @@
+import 'dart:html' as html;
+import 'dart:typed_data';
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter_record_sound/flutter_record_sound_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter/foundation.dart';
 import 'types/amplitude.dart';
 import 'types/encoder.dart';
-import 'dart:html' as html;
-import 'dart:async';
 
 class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
   static void registerWith(Registrar registrar) {
     FlutterRecordSoundPlatform.instance = FlutterRecordSoundPluginWeb();
   }
 
-  // Media recorder object
   html.MediaRecorder? _mediaRecorder;
-
-  // Audio data
-  List<html.Blob> _chunks = <html.Blob>[];
-
-  // Completer to get data & stop events before `stop()` method ends
+  final List<html.Blob> _chunks = <html.Blob>[];
   Completer<String>? _onStopCompleter;
+
+  // 最大振幅
+  double _maxAmplitude = -160;
 
   @override
   Future<void> dispose() async {
@@ -34,7 +34,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
 
     try {
-      await mediaDevices.getUserMedia(<dynamic, dynamic>{'audio': true});
+      await mediaDevices.getUserMedia({'audio': true});
       return true;
     } catch (_) {
       return false;
@@ -56,7 +56,6 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     if (kDebugMode) {
       print('Recording paused');
     }
-
     _mediaRecorder?.pause();
   }
 
@@ -68,8 +67,6 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _mediaRecorder?.resume();
   }
 
-  // TODO apply correct audio encoder config
-  // Try to get it from html.MediaRecorder.isTypeSupported(mimeType) ?
   @override
   Future<void> start({
     String? path,
@@ -82,47 +79,77 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
 
     try {
       final html.MediaStream? stream = await html.window.navigator.mediaDevices
-          ?.getUserMedia(<dynamic, dynamic>{
+          ?.getUserMedia({
         'audio': true,
         'audioBitsPerSecond': bitRate,
         'bitsPerSecond': bitRate,
       });
+
       if (stream != null) {
-        _onStart(stream);
+        _initializeRecorder(stream);
       } else {
         if (kDebugMode) {
           print('Audio recording not supported.');
         }
       }
     } catch (error, stack) {
-      _onError(error, stack);
+      _handleError(error, stack);
     }
   }
 
   @override
   Future<String?> stop() async {
     _onStopCompleter = Completer<String>();
-
     _mediaRecorder?.stop();
-
     return _onStopCompleter?.future;
   }
 
-  void _onStart(html.MediaStream stream) {
+  @override
+  Future<Amplitude> getAmplitude() async {
+    if (_chunks.isEmpty) {
+      return Amplitude(current: -160, max: _maxAmplitude);
+    }
+
+    // 将 Blob 转换为 ArrayBuffer
+    final html.Blob blob = html.Blob(_chunks);
+    final ByteBuffer buffer = await blobToArrayBuffer(blob);
+
+    //将 ArrayBuffer 转换为 Float32List
+    final Uint8List uint8List = Uint8List.view(buffer);
+    final Float32List float32List = Float32List.sublistView(uint8List);
+
+    //计算 RMS 振幅
+    double sum = 0;
+    for (final sample in float32List) {
+      sum += sample * sample;
+    }
+    // 使用 dart:math 的 sqrt
+    final rms = sqrt(sum / float32List.length);
+    // 使用 log10
+    final currentAmplitude = 20 * (rms > 0 ? log10(rms) : -1.0);
+
+    // 更新最大振幅
+    if (currentAmplitude > _maxAmplitude) {
+      _maxAmplitude = currentAmplitude;
+    }
+
+    return Amplitude(current: currentAmplitude, max: _maxAmplitude);
+  }
+
+  void _initializeRecorder(html.MediaStream stream) {
     if (kDebugMode) {
       print('Start recording');
     }
-
     _mediaRecorder = html.MediaRecorder(stream);
     _mediaRecorder?.addEventListener('dataavailable', _onDataAvailable);
     _mediaRecorder?.addEventListener('stop', _onStop);
     _mediaRecorder?.start();
   }
 
-  // ignore: always_specify_types
-  void _onError(error, StackTrace trace) {
+  void _handleError(Object error, StackTrace trace) {
     if (kDebugMode) {
-      print(error);
+      print('Error during recording: $error');
+      print(trace);
     }
   }
 
@@ -136,16 +163,12 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     if (kDebugMode) {
       print('Stop recording');
     }
-
     String? audioUrl;
-
     if (_chunks.isNotEmpty) {
       final html.Blob blob = html.Blob(_chunks);
       audioUrl = html.Url.createObjectUrl(blob);
     }
-
     _resetMediaRecorder();
-
     _onStopCompleter?.complete(audioUrl);
   }
 
@@ -153,13 +176,24 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _mediaRecorder?.removeEventListener('dataavailable', _onDataAvailable);
     _mediaRecorder?.removeEventListener('stop', _onStop);
     _mediaRecorder = null;
-
-    _chunks = <html.Blob>[];
+    _chunks.clear();
   }
 
-  @override
-  Future<Amplitude> getAmplitude() async {
-    // TODO how to check amplitude values on web?
-    return Amplitude(current: -160, max: -160);
+  Future<ByteBuffer> blobToArrayBuffer(html.Blob blob) {
+    final completer = Completer<ByteBuffer>();
+    final reader = html.FileReader();
+    reader.onLoadEnd.listen((_) {
+      completer.complete(reader.result as ByteBuffer);
+    });
+    reader.onError.listen((error) {
+      completer.completeError(error);
+    });
+    reader.readAsArrayBuffer(blob);
+    return completer.future;
+  }
+
+  /// 计算以 10 为底的对数
+  double log10(num x) {
+    return log(x) / ln10;
   }
 }
