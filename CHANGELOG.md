@@ -1,3 +1,3 @@
-## 1.0.3
+## 1.0.4
 
-* Change the description of the package.
+* Add support for web and add example codes.

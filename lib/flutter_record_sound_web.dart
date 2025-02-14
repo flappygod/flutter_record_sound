@@ -31,7 +31,8 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
 
   @override
   Future<void> dispose() async {
-    if (_mediaRecorder?.state == 'recording' || _mediaRecorder?.state == 'paused') {
+    if (_mediaRecorder?.state == 'recording' ||
+        _mediaRecorder?.state == 'paused') {
       _mediaRecorder?.stop();
     }
     _resetMediaRecorder();
@@ -122,7 +123,8 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
 
   @override
   Future<String?> stop() async {
-    if (_mediaRecorder?.state == 'recording' || _mediaRecorder?.state == 'paused') {
+    if (_mediaRecorder?.state == 'recording' ||
+        _mediaRecorder?.state == 'paused') {
       _onStopCompleter = Completer<String>();
       _mediaRecorder?.stop();
       return _onStopCompleter?.future;

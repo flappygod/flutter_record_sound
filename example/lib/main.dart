@@ -32,7 +32,8 @@ class RecordSoundTestPage extends StatefulWidget {
 
 class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
   final FlutterRecordSound _recordSound = FlutterRecordSound();
-  final AudioPlayer _audioPlayer = AudioPlayer(); // Create an instance of AudioPlayer
+  final AudioPlayer _audioPlayer =
+      AudioPlayer(); // Create an instance of AudioPlayer
 
   bool _hasPermission = false;
   bool _isRecording = false;
@@ -150,7 +151,8 @@ class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
               Text('Recorded File Path: $_recordedFilePath'),
             const SizedBox(height: 10),
             if (_amplitude != null)
-              Text('Amplitude: Current=${_amplitude!.current}, Max=${_amplitude!.max}'),
+              Text(
+                  'Amplitude: Current=${_amplitude!.current}, Max=${_amplitude!.max}'),
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: _hasPermission ? _startRecording : null,
