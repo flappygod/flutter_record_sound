@@ -10,7 +10,10 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:html';
 
+/// A web implementation of the `FlutterRecordSoundPlatform` interface.
+/// This class uses the Web APIs to enable audio recording in the browser.
 class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
+  /// Registers this class as the default instance of `FlutterRecordSoundPlatform`.
   static void registerWith(Registrar registrar) {
     FlutterRecordSoundPlatform.instance = FlutterRecordSoundPluginWeb();
   }
@@ -22,13 +25,14 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
   final List<Blob> _chunks = <Blob>[];
   Completer<String>? _onStopCompleter;
 
-  //监听数据可用事件
-  var jsAvailable;
-  var jsStop;
+  // Event listeners for data availability and stop events.
+  dynamic jsAvailable;
+  dynamic jsStop;
 
-  // 最大振幅
+  // Maximum amplitude recorded.
   double _maxAmplitude = -160;
 
+  /// Disposes of the resources used for audio recording.
   @override
   Future<void> dispose() async {
     if (_mediaRecorder?.state == 'recording' ||
@@ -43,6 +47,10 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _chunks.clear();
   }
 
+  /// Checks if the browser has permission to access the microphone.
+  ///
+  /// Returns:
+  /// - A [Future] containing a boolean value indicating whether the permission is granted.
   @override
   Future<bool> hasPermission() async {
     try {
@@ -53,7 +61,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
           ),
         ),
       );
-      // 停止音频流以释放资源
+      // Stop the audio stream to release resources.
       stream?.getTracks().toDart.forEach((track) {
         track.stop();
       });
@@ -63,16 +71,25 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
   }
 
+  /// Checks if the recording is currently paused.
+  ///
+  /// Returns:
+  /// - A [Future] containing a boolean value indicating whether the recording is paused.
   @override
   Future<bool> isPaused() async {
     return _mediaRecorder?.state == 'paused';
   }
 
+  /// Checks if audio is currently being recorded.
+  ///
+  /// Returns:
+  /// - A [Future] containing a boolean value indicating whether recording is in progress.
   @override
   Future<bool> isRecording() async {
     return _mediaRecorder?.state == 'recording';
   }
 
+  /// Pauses the current recording.
   @override
   Future<void> pause() async {
     if (kDebugMode) {
@@ -81,6 +98,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _mediaRecorder?.pause();
   }
 
+  /// Resumes a paused recording.
   @override
   Future<void> resume() async {
     if (kDebugMode) {
@@ -89,6 +107,13 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _mediaRecorder?.resume();
   }
 
+  /// Starts recording audio.
+  ///
+  /// Parameters:
+  /// - [path]: The file path where the recording will be saved (not used in web).
+  /// - [encoder]: The audio encoding format. Defaults to [AudioEncoder.AAC].
+  /// - [bitRate]: The audio bit rate. Defaults to 128000.
+  /// - [samplingRate]: The audio sampling rate. Defaults to 44100.0.
   @override
   Future<void> start({
     String? path,
@@ -121,6 +146,10 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
   }
 
+  /// Stops the recording and returns the URL of the recorded audio.
+  ///
+  /// Returns:
+  /// - A [Future] containing the URL of the recorded audio, or null if no recording was active.
   @override
   Future<String?> stop() async {
     if (_mediaRecorder?.state == 'recording' ||
@@ -132,27 +161,31 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     return null;
   }
 
+  /// Retrieves the current and maximum amplitude of the audio being recorded.
+  ///
+  /// Returns:
+  /// - A [Future] containing an [Amplitude] object with the current and maximum amplitude values.
   @override
   Future<Amplitude> getAmplitude() async {
     if (_analyserNode == null) {
       return Amplitude(current: -160, max: _maxAmplitude);
     }
 
-    //获取音频时域数据
+    // Get the audio time-domain data.
     final Uint8List timeDomainData = Uint8List(_analyserNode!.fftSize);
     _analyserNode!.getByteTimeDomainData(timeDomainData.toJS);
 
-    //计算当前振幅分贝
+    // Calculate the current amplitude in decibels.
     double sum = 0;
     for (final value in timeDomainData) {
-      //范围 [-1, 1]
+      // Normalize the value to the range [-1, 1].
       final double normalizedValue = (value / 128.0) - 1.0;
       sum += normalizedValue * normalizedValue;
     }
     final rms = sqrt(sum / timeDomainData.length);
     final double currentAmplitude = rms > 0 ? 20 * log10(rms) : -160;
 
-    //更新最大振幅
+    // Update the maximum amplitude.
     if (currentAmplitude > _maxAmplitude) {
       _maxAmplitude = currentAmplitude;
     }
@@ -160,13 +193,14 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     return Amplitude(current: currentAmplitude, max: _maxAmplitude);
   }
 
+  /// Initializes the media recorder with the provided audio stream.
   void _initializeRecorder(MediaStream stream) {
     if (kDebugMode) {
       print('Start recording');
     }
     _mediaRecorder = MediaRecorder(stream);
 
-    //监听数据可用事件
+    // Add event listeners for data availability and stop events.
     jsAvailable = allowInterop(_onData);
     jsStop = allowInterop(_onStop);
     _mediaRecorder?.addEventListener('dataavailable', jsAvailable);
@@ -174,6 +208,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _mediaRecorder?.start();
   }
 
+  /// Initializes the audio context and connects the audio stream to an analyser node.
   void _initializeAudioContext(MediaStream stream) {
     _audioContext = AudioContext();
     _audioSourceNode = _audioContext!.createMediaStreamSource(stream);
@@ -182,6 +217,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     _audioSourceNode!.connect(_analyserNode!);
   }
 
+  /// Handles errors that occur during recording.
   void _handleError(Object error, StackTrace trace) {
     if (kDebugMode) {
       print('Error during recording: $error');
@@ -189,6 +225,7 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
   }
 
+  /// Handles the `dataavailable` event and collects audio data chunks.
   void _onData(var event) {
     final Blob? blob = getProperty(event, 'data');
     if (blob != null) {
@@ -196,31 +233,32 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
   }
 
+  /// Handles the `stop` event and finalizes the recording.
   void _onStop(var event) {
     if (kDebugMode) {
       print('Stop recording');
     }
 
-    //将 Blob 转换为可下载的 URL
+    // Combine the collected audio chunks into a single Blob and create a downloadable URL.
     final Blob audioBlob = Blob(_chunks.toJS);
     final String audioUrl = Url.createObjectUrl(audioBlob);
 
-    //清理资源
+    // Clean up resources.
     _resetMediaRecorder();
 
-    //返回音频 URL
+    // Complete the stop completer with the audio URL.
     _onStopCompleter?.complete(audioUrl);
   }
 
+  /// Resets the media recorder and clears the collected audio chunks.
   void _resetMediaRecorder() {
-    // 监听数据可用事件
     _mediaRecorder?.removeEventListener('dataavailable', jsAvailable);
     _mediaRecorder?.removeEventListener('stop', jsStop);
     _mediaRecorder = null;
     _chunks.clear();
   }
 
-  /// 计算以 10 为底的对数
+  /// Calculates the base-10 logarithm of a number.
   double log10(num x) {
     return log(x) / ln10;
   }
