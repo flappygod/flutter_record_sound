@@ -1,3 +1,3 @@
-## 1.0.4
+## 1.0.5
 
-* Add support for web and add example codes.
+* Add explanatory note for all codes in the `src` directory.
