@@ -11,14 +11,34 @@ import kotlin.math.log10
 import android.os.Build
 import android.util.Log
 
+/**
+ * A class for managing audio recording using MediaRecorder.
+ * Supports starting, stopping, pausing, resuming, and retrieving amplitude information.
+ */
 internal class RecorderMedia(private val activity: Activity) {
+
+    // Flags to track recording state
     private var isRecording = false
     private var isPaused = false
+
+    // MediaRecorder instance for recording audio
     private var mediaRecorder: MediaRecorder? = null
+
+    // File path for the recorded audio
     private var path: String? = null
+
+    // Maximum amplitude recorded
     private var maxAmplitude = -160.0
 
-    // Start recording with specified parameters
+    /**
+     * Starts recording audio with the specified parameters.
+     *
+     * @param path The file path where the recording will be saved.
+     * @param encoder The audio encoder type (e.g., AAC, AMR).
+     * @param bitRate The bit rate for the recording.
+     * @param samplingRate The sampling rate for the recording.
+     * @param result The result callback to notify Flutter about the recording status.
+     */
     fun start(
         path: String,
         encoder: Int,
@@ -26,36 +46,43 @@ internal class RecorderMedia(private val activity: Activity) {
         samplingRate: Double,
         result: MethodChannel.Result
     ) {
-
-        //stop at first
+        // Stop any ongoing recording before starting a new one
         stopRecording()
 
-        //save path
+        // Save the file path
         this.path = path
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Initialize MediaRecorder
                 mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     MediaRecorder(activity.baseContext)
                 } else {
                     @Suppress("DEPRECATION")
                     MediaRecorder()
                 }
+
+                // Configure MediaRecorder settings
                 mediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
                 mediaRecorder!!.setAudioEncodingBitRate(bitRate)
                 mediaRecorder!!.setAudioSamplingRate(samplingRate.toInt())
                 mediaRecorder!!.setOutputFormat(getOutputFormat(encoder))
                 mediaRecorder!!.setAudioEncoder(getEncoder(encoder))
                 mediaRecorder!!.setOutputFile(path)
+
+                // Prepare and start recording
                 mediaRecorder!!.prepare()
                 mediaRecorder!!.start()
                 isRecording = true
                 isPaused = false
+
+                // Notify Flutter that recording has started
                 CoroutineScope(Dispatchers.Main).launch {
                     result.success(null)
                 }
                 Log.d(LOG_TAG, "Recording started successfully.")
             } catch (e: Exception) {
+                // Handle errors during recording setup
                 mediaRecorder?.release()
                 mediaRecorder = null
                 CoroutineScope(Dispatchers.Main).launch {
@@ -66,34 +93,46 @@ internal class RecorderMedia(private val activity: Activity) {
         }
     }
 
-    //Stop recording and return the file path
+    /**
+     * Stops the recording and releases resources.
+     */
     fun stop() {
         stopRecording()
     }
 
-    //Pause recording if supported
+    /**
+     * Pauses the recording (requires Android N or higher).
+     */
     @RequiresApi(api = Build.VERSION_CODES.N)
     fun pause() {
         pauseRecording()
     }
 
-    //resume recording if supported
+    /**
+     * Resumes the recording (requires Android N or higher).
+     */
     @RequiresApi(api = Build.VERSION_CODES.N)
     fun resume() {
         resumeRecording()
     }
 
-    //check if currently recording
+    /**
+     * Checks if the recorder is currently recording.
+     */
     fun isRecording(): Boolean {
         return isRecording
     }
 
-    //check if currently paused
+    /**
+     * Checks if the recorder is currently paused.
+     */
     fun isPaused(): Boolean {
         return isPaused
     }
 
-    //get the current and max amplitude
+    /**
+     * Retrieves the current and maximum amplitude in decibels.
+     */
     fun getAmplitude(): Map<String, Any> {
         val amp: MutableMap<String, Any> = HashMap()
         var current = -160.0
@@ -111,8 +150,9 @@ internal class RecorderMedia(private val activity: Activity) {
         return amp
     }
 
-
-    // Stop recording and release resources
+    /**
+     * Stops the recording and releases resources.
+     */
     private fun stopRecording() {
         if (mediaRecorder != null) {
             try {
@@ -133,7 +173,9 @@ internal class RecorderMedia(private val activity: Activity) {
         maxAmplitude = -160.0
     }
 
-    //pause recording
+    /**
+     * Pauses the recording (requires Android N or higher).
+     */
     @RequiresApi(api = Build.VERSION_CODES.N)
     private fun pauseRecording() {
         if (mediaRecorder != null) {
@@ -149,7 +191,9 @@ internal class RecorderMedia(private val activity: Activity) {
         }
     }
 
-    //resume recording
+    /**
+     * Resumes the recording (requires Android N or higher).
+     */
     @RequiresApi(api = Build.VERSION_CODES.N)
     private fun resumeRecording() {
         if (mediaRecorder != null) {
@@ -165,14 +209,18 @@ internal class RecorderMedia(private val activity: Activity) {
         }
     }
 
-    //get the output format based on encoder
+    /**
+     * Determines the output format based on the encoder type.
+     */
     private fun getOutputFormat(encoder: Int): Int {
         return if (encoder == 3 || encoder == 4) {
             MediaRecorder.OutputFormat.THREE_GPP
         } else MediaRecorder.OutputFormat.MPEG_4
     }
 
-    //get the audio encoder based on encoder
+    /**
+     * Determines the audio encoder based on the encoder type.
+     */
     private fun getEncoder(encoder: Int): Int {
         return when (encoder) {
             1 -> MediaRecorder.AudioEncoder.AAC_ELD
@@ -194,8 +242,8 @@ internal class RecorderMedia(private val activity: Activity) {
         }
     }
 
-    //common recorder
     companion object {
+        // Log tag for debugging
         private const val LOG_TAG = "CommonRecorder"
     }
 }

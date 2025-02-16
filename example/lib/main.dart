@@ -115,7 +115,7 @@ class _RecordSoundTestPageState extends State<RecordSoundTestPage> {
   Future<void> _playRecording() async {
     if (_recordedFilePath != null) {
       try {
-        await _audioPlayer.play(_recordedFilePath!, isLocal: true);
+        await _audioPlayer.play(DeviceFileSource(_recordedFilePath!));
       } catch (e) {
         _showError(e.toString());
       }

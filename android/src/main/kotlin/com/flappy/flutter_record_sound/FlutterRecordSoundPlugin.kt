@@ -18,55 +18,62 @@ import java.io.File
 /** FlutterRecordSoundPlugin */
 class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, RequestPermissionsResultListener {
 
-    //activity plugin binding
+    // Activity plugin binding for managing activity lifecycle
     private var activityPluginBinding: ActivityPluginBinding? = null
 
-    //record permission result
+    // Pending result for permission requests
     private var pendingPermResult: MethodChannel.Result? = null
 
-    //method channel
+    // Method channel for communication between Flutter and native code
     private lateinit var channel: MethodChannel
 
-    //context
+    // Application context
     private var context: Context? = null
 
-    //activity
+    // Current activity
     private var activity: Activity? = null
 
-    //recorder
+    // Recorder instance for managing audio recording
     private var recorder: Recorder? = null
 
     companion object {
-        private const val RECORD_AUDIO_REQUEST_CODE = 1001
+        private const val RECORD_AUDIO_REQUEST_CODE = 1001 // Request code for audio recording permission
     }
 
+    // Called when the plugin is attached to the Flutter engine
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         this.context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_record_sound")
         channel.setMethodCallHandler(this)
     }
 
+    // Called when the plugin is detached from the Flutter engine
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
         context = null
     }
 
+    // Called when the plugin is attached to an activity
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         addBinding(binding)
     }
 
+    // Called when the activity is detached for configuration changes
     override fun onDetachedFromActivityForConfigChanges() {
         removeBinding()
     }
 
+    // Called when the activity is reattached after configuration changes
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         addBinding(binding)
     }
 
+    // Called when the plugin is detached from an activity
     override fun onDetachedFromActivity() {
         removeBinding()
     }
 
+    // Adds the activity binding and initializes the recorder
     private fun addBinding(binding: ActivityPluginBinding) {
         activityPluginBinding?.removeRequestPermissionsResultListener(this)
         activity = binding.activity
@@ -75,6 +82,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         this.recorder = Recorder(binding.activity)
     }
 
+    // Removes the activity binding and cleans up resources
     private fun removeBinding() {
         activityPluginBinding?.removeRequestPermissionsResultListener(this)
         activity = null
@@ -84,6 +92,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         pendingPermResult = null
     }
 
+    // Handles method calls from Flutter
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "start" -> handleStart(call, result)
@@ -99,7 +108,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         }
     }
 
-    //Handle the start recording method call
+    // Handles the "start" method call to start recording
     private fun handleStart(call: MethodCall, result: MethodChannel.Result) {
         val encoder = call.argument<Int>("encoder")
         val bitRate = call.argument<Int>("bitRate")
@@ -126,12 +135,12 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         recorder?.start(path!!, encoder, bitRate, samplingRate, result)
     }
 
-    //Handle the stop recording method call
+    // Handles the "stop" method call to stop recording
     private fun handleStop(result: MethodChannel.Result) {
         recorder?.stop(result) ?: result.error("-5", "Recorder is not initialized", null)
     }
 
-    //Handle the pause recording method call
+    // Handles the "pause" method call to pause recording
     private fun handlePause(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             recorder?.pause(result) ?: result.error("-5", "Recorder is not initialized", null)
@@ -140,7 +149,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         }
     }
 
-    //Handle the resume recording method call
+    // Handles the "resume" method call to resume recording
     private fun handleResume(result: MethodChannel.Result) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             recorder?.resume(result) ?: result.error("-5", "Recorder is not initialized", null)
@@ -149,30 +158,28 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         }
     }
 
-    //handle the isPaused method call
+    // Handles the "isPaused" method call to check if recording is paused
     private fun handleIsPaused(result: MethodChannel.Result) {
         recorder?.isPaused(result) ?: result.error("-5", "Recorder is not initialized", null)
     }
 
-    //handle the isRecording method call
+    // Handles the "isRecording" method call to check if recording is in progress
     private fun handleIsRecording(result: MethodChannel.Result) {
         recorder?.isRecording(result) ?: result.error("-5", "Recorder is not initialized", null)
     }
 
-
-    //handle the getAmplitude method call
+    // Handles the "getAmplitude" method call to get the current amplitude
     private fun handleGetAmplitude(result: MethodChannel.Result) {
         recorder?.getAmplitude(result) ?: result.error("-5", "Recorder is not initialized", null)
     }
 
-    //handle the dispose method call
+    // Handles the "dispose" method call to release resources
     private fun handleDispose(result: MethodChannel.Result) {
         recorder?.close() ?: result.error("-5", "Recorder is not initialized", null)
         result.success(null)
     }
 
-
-    //handle the hasPermission method call
+    // Handles the "hasPermission" method call to check for audio recording permission
     private fun handleHasPermission(result: MethodChannel.Result) {
         if (!isPermissionGranted) {
             pendingPermResult = result
@@ -182,7 +189,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         }
     }
 
-    //Check if the record audio permission is granted
+    // Checks if the audio recording permission is granted
     private val isPermissionGranted: Boolean
         get() {
             val activity = this.activity ?: return false
@@ -190,7 +197,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             return result == PackageManager.PERMISSION_GRANTED
         }
 
-    //Request the record audio permission
+    // Requests audio recording permission
     private fun askForPermission() {
         val activity = this.activity
         if (activity == null) {
@@ -205,7 +212,7 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         )
     }
 
-    ///request permission result
+    // Handles the result of a permission request
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
         if (requestCode == RECORD_AUDIO_REQUEST_CODE) {
             if (pendingPermResult != null) {
@@ -221,28 +228,13 @@ class FlutterRecordSoundPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         return false
     }
 
-    // 获取文件扩展名
+    // Returns the file extension based on the encoder type
     private fun getFileExtension(encoder: Int): String {
         return when (encoder) {
-            6 -> {
-                // WAV 格式
-                ".wav"
-            }
-
-            3, 4 -> {
-                // AMR 格式
-                ".amr"
-            }
-
-            5 -> {
-                // Opus 格式
-                ".opus"
-            }
-
-            else -> {
-                // 默认使用 AAC 格式
-                ".m4a"
-            }
+            6 -> ".wav" // WAV format
+            3, 4 -> ".amr" // AMR format
+            5 -> ".opus" // Opus format
+            else -> ".m4a" // Default to AAC format
         }
     }
 }
