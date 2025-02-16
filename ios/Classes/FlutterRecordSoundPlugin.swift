@@ -2,33 +2,85 @@ import Flutter
 import UIKit
 import AVFoundation
 
+/**
+ A Flutter plugin for recording audio on iOS.
+ This plugin provides methods to start, stop, pause, resume recording, check permissions, and retrieve amplitude information.
+ */
 public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderDelegate {
     
-    // 注册
+    // MARK: - Plugin Registration
+    
+    /**
+     Registers the plugin with the Flutter engine.
+     
+     - Parameters:
+        - registrar: The registrar provided by Flutter for registering plugins.
+     */
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "flutter_record_sound", binaryMessenger: registrar.messenger())
         let instance = FlutterRecordSoundPlugin()
         registrar.addMethodCallDelegate(instance, channel: channel)
     }
     
-    // 属性定义
-    var isRecording = false
-    var isPaused = false
-    var hasPermission = false
-    var audioRecorder: AVAudioRecorder?
-    var path: String?
-    var maxAmplitude: Float = -160.0
+    // MARK: - Properties
     
-    // 处理Flutter方法调用
+    /// Indicates whether the recorder is currently recording.
+    private var isRecording = false
+    
+    /// Indicates whether the recorder is currently paused.
+    private var isPaused = false
+    
+    /// Indicates whether the app has permission to record audio.
+    private var hasPermission = false
+    
+    /// The audio recorder instance used for recording.
+    private var audioRecorder: AVAudioRecorder?
+    
+    /// The file path where the audio recording is saved.
+    private var path: String?
+    
+    /// The maximum amplitude recorded so far.
+    private var maxAmplitude: Float = -160.0
+    
+    /// A thread-safe queue for managing state variables.
+    private let stateQueue = DispatchQueue(label: "com.flappy.flutter_record_sound.state")
+    
+    /// Thread-safe accessor for `isRecording`.
+    private var isRecordingSafe: Bool {
+        get { stateQueue.sync { isRecording } }
+        set { stateQueue.sync { isRecording = newValue } }
+    }
+    
+    /// Thread-safe accessor for `isPaused`.
+    private var isPausedSafe: Bool {
+        get { stateQueue.sync { isPaused } }
+        set { stateQueue.sync { isPaused = newValue } }
+    }
+    
+    // MARK: - Flutter Method Call Handling
+    
+    /**
+     Handles method calls from Flutter.
+     
+     - Parameters:
+        - call: The method call from Flutter.
+        - result: The result callback to send data back to Flutter.
+     */
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "start":
             let args = call.arguments as! [String: Any]
             path = args["path"] as? String
             if path == nil {
+                // Generate a temporary file path if none is provided
                 let directory = NSTemporaryDirectory()
                 let fileName = UUID().uuidString + getFileExtension(for: args["encoder"] as? Int ?? 0)
-                path = NSURL.fileURL(withPathComponents: [directory, fileName])?.absoluteString
+                if let validPath = NSURL.fileURL(withPathComponents: [directory, fileName])?.absoluteString {
+                    path = validPath
+                } else {
+                    result(FlutterError(code: "-2", message: "Failed to generate file path", details: nil))
+                    return
+                }
             }
             start(
                 path: path!,
@@ -44,9 +96,9 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderD
         case "resume":
             resume(result)
         case "isPaused":
-            result(isPaused)
+            result(isPausedSafe)
         case "isRecording":
-            result(isRecording)
+            result(isRecordingSafe)
         case "hasPermission":
             hasPermission(result)
         case "getAmplitude":
@@ -58,37 +110,65 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderD
         }
     }
     
-    // 应用生命周期事件处理
+    // MARK: - App Lifecycle Handling
+    
+    /**
+     Stops recording when the app is about to terminate.
+     */
     public func applicationWillTerminate(_ application: UIApplication) {
         stopRecording()
     }
     
+    /**
+     Stops recording when the app enters the background.
+     */
     public func applicationDidEnterBackground(_ application: UIApplication) {
         stopRecording()
     }
     
-    // 检查录音权限
+    // MARK: - Permission Handling
+    
+    /**
+     Checks and requests permission to record audio.
+     
+     - Parameters:
+        - result: The result callback to send the permission status back to Flutter.
+     */
     fileprivate func hasPermission(_ result: @escaping FlutterResult) {
         switch AVAudioSession.sharedInstance().recordPermission {
         case .granted:
             hasPermission = true
+            result(hasPermission)
         case .denied:
             hasPermission = false
+            result(hasPermission)
         case .undetermined:
+            // Request permission if not determined
             AVAudioSession.sharedInstance().requestRecordPermission { [unowned self] allowed in
                 DispatchQueue.main.async {
                     self.hasPermission = allowed
+                    result(self.hasPermission) // Return result after permission request
                 }
             }
         default:
-            break
+            result(false)
         }
-        result(hasPermission)
     }
     
-    // 开始录音
+    // MARK: - Recording Methods
+    
+    /**
+     Starts recording audio with the specified parameters.
+     
+     - Parameters:
+        - path: The file path where the recording will be saved.
+        - encoder: The audio encoder type (e.g., AAC, AMR, WAV).
+        - bitRate: The bit rate for the recording.
+        - samplingRate: The sampling rate for the recording.
+        - result: The result callback to notify Flutter about the recording status.
+     */
     fileprivate func start(path: String, encoder: Int, bitRate: Int, samplingRate: Float, result: @escaping FlutterResult) {
-        stopRecording()
+        stopRecording() // Stop any ongoing recording
         
         let settings: [String: Any] = [
             AVFormatIDKey: getEncoder(encoder),
@@ -105,58 +185,81 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderD
         
         DispatchQueue.global(qos: .background).async {
             do {
+                // Configure the audio session
                 try AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: options)
                 try AVAudioSession.sharedInstance().setActive(true)
                 
+                // Initialize the audio recorder
                 let url = URL(string: path) ?? URL(fileURLWithPath: path)
                 self.audioRecorder = try AVAudioRecorder(url: url, settings: settings)
                 self.audioRecorder?.delegate = self
                 self.audioRecorder?.isMeteringEnabled = true
                 self.audioRecorder?.record()
                 
-                self.isRecording = true
-                self.isPaused = false
+                // Update state
+                self.isRecordingSafe = true
+                self.isPausedSafe = false
                 
                 DispatchQueue.main.async {
                     result(nil)
                 }
             } catch {
                 DispatchQueue.main.async {
-                    result(FlutterError(code: "", message: "Failed to start recording", details: nil))
+                    result(FlutterError(code: "-1", message: "Failed to start recording", details: nil))
                 }
             }
         }
     }
     
-    // 停止录音
+    /**
+     Stops the recording and returns the file path.
+     
+     - Parameters:
+        - result: The result callback to send the file path back to Flutter.
+     */
     fileprivate func stop(_ result: @escaping FlutterResult) {
         stopRecording()
         result(path)
     }
     
-    // 暂停录音
+    /**
+     Pauses the recording.
+     
+     - Parameters:
+        - result: The result callback to notify Flutter about the pause status.
+     */
     fileprivate func pause(_ result: @escaping FlutterResult) {
         audioRecorder?.pause()
-        isPaused = true
+        isPausedSafe = true
         result(nil)
     }
     
-    // 恢复录音
+    /**
+     Resumes the recording.
+     
+     - Parameters:
+        - result: The result callback to notify Flutter about the resume status.
+     */
     fileprivate func resume(_ result: @escaping FlutterResult) {
-        if isPaused {
+        if isPausedSafe {
             audioRecorder?.record()
-            isPaused = false
+            isPausedSafe = false
         }
         result(nil)
     }
     
-    // 获取振幅
+    /**
+     Retrieves the current and maximum amplitude.
+     
+     - Parameters:
+        - result: The result callback to send amplitude data back to Flutter.
+     */
     fileprivate func getAmplitude(_ result: @escaping FlutterResult) {
         var amp: [String: Float] = ["current": -160.0]
         
-        if isRecording {
+        if isRecordingSafe {
             audioRecorder?.updateMeters()
-            if let current = audioRecorder?.averagePower(forChannel: 0) {
+            if let current = audioRecorder?.averagePower(forChannel: 0), current != -Float.infinity {
                 if current > maxAmplitude {
                     maxAmplitude = current
                 }
@@ -168,22 +271,39 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderD
         result(amp)
     }
     
-    // 停止录音并重置状态
+    /**
+     Stops the recording and resets the state.
+     */
     fileprivate func stopRecording() {
-        audioRecorder?.stop()
+        if let recorder = audioRecorder, recorder.isRecording {
+            recorder.stop()
+        }
         audioRecorder = nil
-        isRecording = false
-        isPaused = false
+        isRecordingSafe = false
+        isPausedSafe = false
         maxAmplitude = -160.0
     }
     
-    // 释放资源
+    /**
+     Releases resources and stops the recording.
+     
+     - Parameters:
+        - result: The result callback to notify Flutter about the disposal status.
+     */
     fileprivate func dispose(_ result: @escaping FlutterResult) {
         stopRecording()
         result(path)
     }
     
-    // 获取编码器类型
+    // MARK: - Helper Methods
+    
+    /**
+     Returns the encoder type for the given encoder ID.
+     
+     - Parameters:
+        - encoder: The encoder ID.
+     - Returns: The corresponding encoder type.
+     */
     fileprivate func getEncoder(_ encoder: Int) -> Int {
         switch encoder {
         case 1:
@@ -195,29 +315,35 @@ public class FlutterRecordSoundPlugin: NSObject, FlutterPlugin, AVAudioRecorderD
         case 4:
             return Int(kAudioFormatAMR_WB)
         case 5:
-            return Int(kAudioFormatOpus)
-        case 6: // WAV 格式
+            if #available(iOS 14.0, *) {
+                return Int(kAudioFormatOpus)
+            } else {
+                return Int(kAudioFormatMPEG4AAC) // Fallback to AAC
+            }
+        case 6: // WAV format
             return Int(kAudioFormatLinearPCM)
         default:
             return Int(kAudioFormatMPEG4AAC)
         }
     }
     
-    // 获取文件扩展名
+    /**
+     Returns the file extension for the given encoder ID.
+     
+     - Parameters:
+        - encoder: The encoder ID.
+     - Returns: The corresponding file extension.
+     */
     fileprivate func getFileExtension(for encoder: Int) -> String {
         switch encoder {
         case 6:
-            // WAV 格式
-            return ".wav"
+            return ".wav" // WAV format
         case 3, 4:
-            // AMR 格式
-            return ".amr"
+            return ".amr" // AMR format
         case 5:
-            // Opus 格式
-            return ".opus"
+            return ".opus" // Opus format
         default:
-            // 默认使用 AAC 格式
-            return ".m4a"
+            return ".m4a" // Default to AAC
         }
     }
 }
