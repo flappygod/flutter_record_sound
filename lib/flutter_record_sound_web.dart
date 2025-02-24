@@ -1,14 +1,13 @@
 import 'package:flutter_record_sound/flutter_record_sound_platform_interface.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:js_interop_unsafe';
 import 'package:web/web.dart';
 import 'types/amplitude.dart';
 import 'types/encoder.dart';
 import 'dart:js_interop';
-import 'dart:js_util';
 import 'dart:async';
 import 'dart:math';
-import 'dart:html';
 
 /// A web implementation of the `FlutterRecordSoundPlatform` interface.
 /// This class uses the Web APIs to enable audio recording in the browser.
@@ -54,15 +53,15 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
   @override
   Future<bool> hasPermission() async {
     try {
-      final MediaStream? stream = await promiseToFuture(
-        window.navigator.mediaDevices.getUserMedia(
-          MediaStreamConstraints(
-            audio: true.toJS,
-          ),
-        ),
-      );
+      final MediaStream stream = await window.navigator.mediaDevices
+          .getUserMedia(
+            MediaStreamConstraints(
+              audio: true.toJS,
+            ),
+          )
+          .toDart;
       // Stop the audio stream to release resources.
-      stream?.getTracks().toDart.forEach((track) {
+      stream.getTracks().toDart.forEach((track) {
         track.stop();
       });
       return true;
@@ -127,19 +126,15 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
 
     try {
-      final MediaStream? stream = await promiseToFuture(
-        window.navigator.mediaDevices.getUserMedia(
-          MediaStreamConstraints(
-            audio: true.toJS,
-          ),
-        ),
-      );
-      if (stream != null) {
-        _initializeRecorder(stream);
-        _initializeAudioContext(stream);
-      } else {
-        throw Exception('Audio recording not supported.');
-      }
+      final MediaStream stream = await window.navigator.mediaDevices
+          .getUserMedia(
+            MediaStreamConstraints(
+              audio: true.toJS,
+            ),
+          )
+          .toDart;
+      _initializeRecorder(stream);
+      _initializeAudioContext(stream);
     } catch (error, stack) {
       _handleError(error, stack);
       rethrow;
@@ -200,9 +195,13 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
     }
     _mediaRecorder = MediaRecorder(stream);
 
-    // Add event listeners for data availability and stop events.
-    jsAvailable = allowInterop(_onData);
-    jsStop = allowInterop(_onStop);
+    //Add event listeners for data availability and stop events.
+    jsAvailable = ((JSObject data) {
+      _onData(data);
+    }).toJS;
+    jsStop = ((JSObject data) {
+      _onStop(data);
+    }).toJS;
     _mediaRecorder?.addEventListener('dataavailable', jsAvailable);
     _mediaRecorder?.addEventListener('stop', jsStop);
     _mediaRecorder?.start();
@@ -226,22 +225,23 @@ class FlutterRecordSoundPluginWeb extends FlutterRecordSoundPlatform {
   }
 
   /// Handles the `dataavailable` event and collects audio data chunks.
-  void _onData(var event) {
-    final Blob? blob = getProperty(event, 'data');
+  void _onData(JSObject event) {
+    //final Blob? blob = getProperty(event, 'data');
+    final Blob? blob = event.getProperty('data'.toJS);
     if (blob != null) {
       _chunks.add(blob);
     }
   }
 
   /// Handles the `stop` event and finalizes the recording.
-  void _onStop(var event) {
+  void _onStop(JSObject event) {
     if (kDebugMode) {
       print('Stop recording');
     }
 
     // Combine the collected audio chunks into a single Blob and create a downloadable URL.
     final Blob audioBlob = Blob(_chunks.toJS);
-    final String audioUrl = Url.createObjectUrl(audioBlob);
+    final String audioUrl = URL.createObjectURL(audioBlob);
 
     // Clean up resources.
     _resetMediaRecorder();

@@ -1,3 +1,2 @@
-## 1.0.5
-
-* Add explanatory note for all codes in the `src` directory.
+## 1.0.6
+* Remove deprecated methods and change pubspec.yaml.
